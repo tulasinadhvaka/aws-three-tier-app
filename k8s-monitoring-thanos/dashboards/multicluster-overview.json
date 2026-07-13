@@ -1,0 +1,82 @@
+{
+  "title": "Multi-Cluster Overview (Thanos)",
+  "uid": "multicluster-overview",
+  "tags": ["thanos", "multi-cluster"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "cluster",
+        "label": "Cluster",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "thanos" },
+        "query": "label_values(up, cluster)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Targets Up by Cluster",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "thanos" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (cluster) (up{cluster=~\"$cluster\"})",
+          "legendFormat": "{{cluster}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "CPU Usage by Cluster (cores)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "thanos" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (cluster) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\"}[5m]))",
+          "legendFormat": "{{cluster}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Memory Working Set by Cluster (bytes)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "thanos" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (cluster) (container_memory_working_set_bytes{cluster=~\"$cluster\"})",
+          "legendFormat": "{{cluster}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Thanos Blocks Loaded (Store Gateway)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "thanos" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(thanos_bucket_store_blocks_loaded)",
+          "legendFormat": "blocks"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+# kube-prometheus-stack values for a WORKLOAD cluster.
+# Deploys Prometheus with a Thanos sidecar that uploads blocks to S3 and exposes StoreAPI.
+#
+# IMPORTANT: set a UNIQUE `cluster` external label per workload cluster (cluster-a, cluster-b, ...).
+# The `prometheus_replica` label is filled from the pod name so HA replicas dedupe correctly.
+
+prometheus:
+  # Annotate the Prometheus service account for IRSA (S3 access via the sidecar).
+  serviceAccount:
+    create: true
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/thanos-s3-irsa"
+
+  prometheusSpec:
+    # External labels identify this cluster's blocks in S3 and drive Thanos dedup.
+    externalLabels:
+      cluster: "cluster-a"        # <-- CHANGE per workload cluster
+      replica: "$(POD_NAME)"
+
+    replicaExternalLabelName: "replica"
+
+    # Keep only a short window locally; long-term history lives in S3 via Thanos.
+    retention: "6h"
+    retentionSize: "8GB"
+
+    # --- Thanos sidecar: uploads blocks to S3 and serves StoreAPI ---
+    thanos:
+      objectStorageConfig:
+        existingObjectStorageSecret:
+          name: thanos-objstore
+          key: objstore.yml
+
+    # Persist the TSDB so the sidecar can upload completed blocks.
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+
+# Expose the sidecar's StoreAPI (gRPC :10901) so the central Querier can reach it.
+# In a real setup this is a LoadBalancer/Ingress or cross-cluster service mesh endpoint.
+prometheus-thanos-sidecar: {}   # placeholder anchor; see notes below
+
+# Grafana runs centrally (on the observability cluster), not here.
+grafana:
+  enabled: false
+
+# Alertmanager optional per workload cluster; disabled to keep the demo lean.
+alertmanager:
+  enabled: false

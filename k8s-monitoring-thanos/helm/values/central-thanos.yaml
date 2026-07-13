@@ -1,0 +1,70 @@
+# Bitnami Thanos values for the CENTRAL observability cluster.
+# Runs Store Gateway, Querier, Compactor + Grafana. Queries every workload cluster's
+# sidecar StoreAPI plus the S3 history via the Store Gateway.
+
+# Shared S3 object-store secret (same bucket as the workload clusters).
+existingObjstoreSecret: thanos-objstore
+existingObjstoreSecretItems:
+  - key: objstore.yml
+    path: objstore.yml
+
+# NOTE: the Bitnami Thanos chart scopes serviceAccount config PER COMPONENT.
+# IRSA is annotated only on the components that touch S3: storegateway + compactor.
+# (Querier reads from StoreAPIs, not S3, so it needs no S3 role.)
+
+# --- Querier: single query surface across all clusters + S3 history ---
+query:
+  enabled: true
+  replicaCount: 2
+  # Dedup on the `replica` label written by each Prometheus.
+  replicaLabel:
+    - replica
+  # StoreAPI endpoints to fan queries out to:
+  #  - each workload cluster's Thanos sidecar (gRPC :10901, reachable cross-cluster)
+  #  - the central Store Gateway (added automatically when store.enabled=true)
+  stores:
+    - "sidecar.cluster-a.example.com:10901"   # <-- CHANGE to real sidecar endpoints
+    - "sidecar.cluster-b.example.com:10901"
+
+# Query Frontend: caches + splits large queries (nice-to-have for Grafana perf).
+queryFrontend:
+  enabled: true
+
+# --- Store Gateway: makes historical S3 blocks queryable (needs S3 access → IRSA) ---
+storegateway:
+  enabled: true
+  replicaCount: 1
+  serviceAccount:
+    create: true
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/thanos-s3-irsa"
+  persistence:
+    enabled: true
+    size: 10Gi   # local index cache, not the metrics themselves
+
+# --- Compactor: EXACTLY ONE per bucket. Compaction + downsampling + retention (needs S3 → IRSA). ---
+compactor:
+  enabled: true
+  serviceAccount:
+    create: true
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/thanos-s3-irsa"
+  retentionResolutionRaw: 30d
+  retentionResolution5m: 180d
+  retentionResolution1h: 365d
+  persistence:
+    enabled: true
+    size: 20Gi
+
+# Ruler/receiver not used in the sidecar topology.
+ruler:
+  enabled: false
+receive:
+  enabled: false
+
+# --- Grafana (via Bitnami subchart or install separately) ---
+# Point Grafana's Prometheus datasource at the Thanos Query Frontend service:
+#   URL: http://thanos-query-frontend.monitoring.svc:9090
+# Then import dashboards/multicluster-overview.json.
+metrics:
+  enabled: true

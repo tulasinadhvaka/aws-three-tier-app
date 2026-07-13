@@ -1,0 +1,22 @@
+# Secrets — never commit the real objstore config
+objstore.yml
+objstore.yaml
+*-secret.yaml
+!*-secret.example.yaml
+
+# Credentials
+*.pem
+*.key
+kubeconfig*
+.aws/
+credentials
+
+# Helm
+charts/
+*.tgz
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
