@@ -1,0 +1,27 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Variable files that may contain secrets
+*.tfvars.secret
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Credentials
+*.pem
+*.key
+.aws/
+credentials
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
