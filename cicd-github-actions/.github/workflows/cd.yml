@@ -1,0 +1,99 @@
+name: CD
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["app/**", "Dockerfile", "deploy/**", ".github/workflows/cd.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false # never cancel a deploy mid-flight
+
+permissions:
+  contents: read
+  id-token: write # required for GitHub OIDC → AWS
+
+env:
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.uri }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t app:${{ env.IMAGE_TAG }} .
+
+      - name: Scan image (Trivy) — fail on HIGH/CRITICAL
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: app:${{ env.IMAGE_TAG }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: AWS OIDC + ECR login
+        id: login
+        uses: ./.github/actions/aws-ecr-login
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-arn: ${{ vars.AWS_ROLE_ARN }}
+
+      - name: Tag and push to ECR
+        id: image
+        run: |
+          REGISTRY="${{ steps.login.outputs.registry }}"
+          URI="$REGISTRY/${{ vars.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+          docker tag app:${{ env.IMAGE_TAG }} "$URI"
+          docker push "$URI"
+          echo "uri=$URI" >> "$GITHUB_OUTPUT"
+
+  deploy-staging:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: staging # auto-deploy
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: AWS OIDC + ECR login
+        uses: ./.github/actions/aws-ecr-login
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-arn: ${{ vars.AWS_ROLE_ARN }}
+      - name: Configure kubectl for EKS
+        run: aws eks update-kubeconfig --name "${{ vars.EKS_CLUSTER }}" --region "${{ vars.AWS_REGION }}"
+      - name: Deploy
+        run: |
+          kubectl -n staging set image deployment/portfolio-app \
+            app="${{ needs.build-and-push.outputs.image }}" --record || \
+          kubectl -n staging apply -f deploy/k8s/
+          kubectl -n staging set image deployment/portfolio-app app="${{ needs.build-and-push.outputs.image }}"
+          kubectl -n staging rollout status deployment/portfolio-app --timeout=120s
+
+  deploy-production:
+    needs: [build-and-push, deploy-staging]
+    runs-on: ubuntu-latest
+    environment: production # required reviewers gate this in repo settings
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: AWS OIDC + ECR login
+        uses: ./.github/actions/aws-ecr-login
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-arn: ${{ vars.AWS_ROLE_ARN }}
+      - name: Configure kubectl for EKS
+        run: aws eks update-kubeconfig --name "${{ vars.EKS_CLUSTER }}" --region "${{ vars.AWS_REGION }}"
+      - name: Deploy
+        run: |
+          kubectl -n production apply -f deploy/k8s/
+          kubectl -n production set image deployment/portfolio-app app="${{ needs.build-and-push.outputs.image }}"
+          kubectl -n production rollout status deployment/portfolio-app --timeout=120s

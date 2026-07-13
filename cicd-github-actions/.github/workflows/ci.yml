@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+    paths: ["app/**", "Dockerfile", ".github/workflows/ci.yml"]
+  push:
+    branches: ["main"]
+    paths: ["app/**", "Dockerfile", ".github/workflows/ci.yml"]
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - name: Ruff lint
+        run: ruff check app/
+      - name: Hadolint (Dockerfile)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: |
+          pip install -r app/requirements.txt
+          pip install pytest pytest-cov
+      - name: Run tests with coverage
+        working-directory: app
+        run: pytest --cov=. --cov-report=term-missing --cov-fail-under=80
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install scanners
+        run: pip install bandit pip-audit
+      - name: SAST (bandit)
+        run: bandit -r app/ -ll
+      - name: Dependency audit (pip-audit)
+        run: pip-audit -r app/requirements.txt

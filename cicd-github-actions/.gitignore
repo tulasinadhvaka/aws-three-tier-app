@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+.ruff_cache/
+venv/
+.venv/
+
+# Credentials
+*.pem
+*.key
+.aws/
+credentials
+kubeconfig*
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
