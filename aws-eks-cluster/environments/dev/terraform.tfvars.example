@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars and fill in real values (terraform.tfvars is gitignored).
+# Get private_subnet_ids from the aws-terraform-foundation outputs (or your own VPC).
+# NOTE: EKS nodes in private subnets need NAT egress — enable NAT in the foundation layer.
+
+region             = "us-east-1"
+cluster_name       = "dev-eks"
+kubernetes_version = "1.30"
+
+private_subnet_ids = ["subnet-cccc", "subnet-dddd"]
+
+# Set true to also create the tainted system node group (extra cost).
+enable_system_group = false
