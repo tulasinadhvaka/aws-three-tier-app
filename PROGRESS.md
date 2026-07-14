@@ -10,9 +10,7 @@ Tracking file for the Portfolio agent. Ship one project fully (all "done" boxes 
 | 3 | EKS cluster + multiple node groups | 🟡 In progress | `aws-eks-cluster/` | EKS, IRSA/OIDC, on-demand + Spot + tainted node groups |
 | 4 | Multi-cluster monitoring (Prometheus/Thanos/Grafana) | 🟡 In progress | `k8s-monitoring-thanos/` | Helm, Thanos sidecar+hub, S3 long-term storage, IRSA |
 | 5 | CI/CD pipeline (GitHub Actions) | 🟡 In progress | `cicd-github-actions/` | build→test→scan→deploy, OIDC, env gates, ECR→EKS |
-| 6 | Dockerized microservices | ⚪ Not started | — | multi-service deployment |
-| 7 | Backups & disaster recovery | ⚪ Not started | — | snapshots, restore runbook |
-| 8 | Multi-environment (dev/staging/prod) | ⚪ Not started | — | Terraform workspaces/dirs |
+| 6 | Multi-region DR (active/passive failover) | 🟡 In progress | `aws-multi-region-dr/` | Aurora Global, Redis Global, S3 CRR, CloudFront+Route53 failover, RTO≤30m/RPO≤5m |
 
 Legend: ⚪ Not started · 🟡 In progress · 🟢 Done
 
@@ -75,8 +73,23 @@ Legend: ⚪ Not started · 🟡 In progress · 🟢 Done
 - [ ] Wire GitHub repo: OIDC IAM role, repo variables, staging/production Environments
 - [ ] Screenshot a green pipeline run (Actions tab) + prod approval gate
 
+## Project #6 — Multi-Region DR / active-passive failover (aws-multi-region-dr)
+Rearchitected per CLAUDE.md from backup-restore → full multi-region failover (RTO≤30m, RPO≤5m).
+- [x] 8 region-agnostic modules: network, alb, aurora-global, redis-global, s3-replication, cloudfront, route53, monitoring
+- [x] Aurora Global Database (primary writer + DR reader, continuous <1s replication → RPO≤5m)
+- [x] ElastiCache Global Datastore (primary + DR secondary)
+- [x] S3 Cross-Region Replication with versioning + IAM replication role
+- [x] CloudFront origin-group failover (primary + DR origins, 5xx/timeout → DR)
+- [x] Route53 health check + PRIMARY/SECONDARY failover ALIAS records
+- [x] CloudWatch alarm (us-east-1 for R53 metrics) + dashboard + SNS
+- [x] dev env: 3 providers (primary, aws.dr, aws.useast1), no hardcoded regions/names
+- [x] scripts: promote-aurora.sh, dr-test.sh + RUNBOOK (failover/failback/quarterly test)
+- [x] `terraform fmt/init/validate` all pass, ZERO warnings (added providers.tf to all modules)
+- [ ] Run `apply` against a real AWS account (warm-standby footprint — NOT free tier)
+- [ ] Execute a failover test per RUNBOOK; record actual RTO/RPO; screenshots
+
 ## Next action
-Five projects validate cleanly (#5 verified end-to-end locally). When AWS creds are ready:
+Six projects validate cleanly (#5 verified end-to-end locally). When AWS creds are ready:
 1. Apply Project #1 (`aws-terraform-foundation/environments/dev`). For #3, enable NAT
    (`enable_nat_gateway = true`) so private nodes can pull images.
 2. Feed the foundation's `vpc_id` + subnet outputs into #2 and #3's `terraform.tfvars`.

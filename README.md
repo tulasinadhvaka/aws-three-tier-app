@@ -13,8 +13,7 @@ Production-shaped cloud infrastructure and delivery projects — **Terraform · 
 | 3 | [EKS Cluster](./aws-eks-cluster) | ✅ Built · validate-clean | EKS with on-demand + Spot + tainted node groups, IRSA | Terraform · EKS |
 | 4 | [Multi-Cluster Monitoring](./k8s-monitoring-thanos) | ✅ Built · render-clean | Prometheus + Thanos + Grafana, S3 long-term storage | Helm · Thanos · S3 |
 | 5 | [CI/CD Pipeline](./cicd-github-actions) | ✅ Built · verified locally | build → test → scan → deploy, OIDC, env gates | GitHub Actions · Trivy · OIDC |
-| 6 | Dockerized Microservices | ⬜ Planned | Multi-service containerised app + deployment | Docker · Compose/K8s |
-| 7 | Backups & Disaster Recovery | ⬜ Planned | Automated snapshots + tested restore runbook | Terraform · AWS Backup |
+| 6 | [Multi-Region Disaster Recovery](./aws-multi-region-dr) | ✅ Built · validate-clean | Active/passive failover — Aurora Global, CloudFront + Route 53 failover, RTO≤30m/RPO≤5m | Terraform · Aurora Global · CloudFront · Route 53 |
 
 Status legend: ✅ built & validated locally (pending a live-account `apply` + screenshots) · ⬜ planned.
 
@@ -66,22 +65,15 @@ A full GitHub Actions pipeline: **build → test → scan → deploy**.
 
 ---
 
-## Planned projects
+### 6. Multi-Region Disaster Recovery — [`aws-multi-region-dr/`](./aws-multi-region-dr)
+An **active/passive multi-region failover** architecture — the full stack in a primary and a warm-standby DR region, with automatic failover and continuous replication. Meets **RTO ≤ 30 min** and **RPO ≤ 5 min**.
 
-### 6. Dockerized Microservices *(planned)*
-A small multi-service application demonstrating container packaging and orchestration end to end.
-
-- Multiple independently-built services (e.g. API + worker + frontend) each with its own Dockerfile.
-- Local orchestration via Docker Compose, and a Kubernetes deployment path (manifests/Helm) reusing the EKS cluster from Project #3.
-- Service-to-service networking, health checks, and resource limits.
-- **Will demonstrate:** container best practices, multi-service deployment, service discovery.
-
-### 7. Backups & Disaster Recovery *(planned)*
-Automated backups with a **tested** restore path — the part most portfolios skip.
-
-- Automated snapshots for RDS and EBS (and/or AWS Backup plans) provisioned with Terraform.
-- Defined retention and a **runbook** documenting and validating an actual restore (not just "backups exist").
-- **Will demonstrate:** operational maturity, RPO/RTO thinking, disaster-recovery discipline.
+- **8 region-agnostic Terraform modules** — network, ALB, Aurora Global, Redis Global, S3 CRR, CloudFront, Route 53, monitoring. No hardcoded regions or names; everything flows from `primary_region` / `dr_region`.
+- **Continuous data replication:** Aurora Global Database (writer + promotable DR reader, < 1s lag), ElastiCache Global Datastore, and S3 Cross-Region Replication.
+- **Automatic failover:** CloudFront **origin-group** failover at the edge (seconds) + Route 53 **health-check failover records** at DNS.
+- **Operational tooling:** CloudWatch alarm + dashboard, SNS alerts, DR automation scripts (`promote-aurora.sh`, `dr-test.sh`), and a [**failover/failback runbook**](./aws-multi-region-dr/RUNBOOK.md) with a quarterly DR-test checklist recording actual RTO/RPO.
+- **Well-Architected (Reliability):** multi-region, multi-AZ, automatic failover, idempotent IaC.
+- **Verified:** `terraform fmt/init/validate` clean with **zero warnings** across a 3-provider (primary / DR / us-east-1) composition.
 
 > Multi-environment promotion (dev/staging/prod) is already demonstrated in Project #1's `environments/` structure, so it isn't tracked as a separate build.
 
