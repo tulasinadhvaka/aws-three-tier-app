@@ -1,0 +1,90 @@
+# Helm values for grafana/loki chart — SimpleScalable deployment on S3.
+# Plain (non-EKS) Kubernetes: Loki authenticates to S3 with static access keys
+# loaded from the `loki-s3-credentials` secret (see README Step 2).
+# Install: helm upgrade --install loki grafana/loki -n loki -f loki-values.yaml
+#
+# EDIT THESE before installing:
+#   - loki.storage.bucketNames.*   -> your bucket
+#   - loki.storage.s3.region       -> your region
+
+deploymentMode: SimpleScalable
+
+loki:
+  # Schema: TSDB index + S3 object store. Keep the from-date in the past.
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+
+  storage:
+    type: s3
+    bucketNames:
+      chunks: my-org-loki-chunks
+      ruler: my-org-loki-chunks
+      admin: my-org-loki-chunks
+    s3:
+      region: us-west-2
+      # Leave endpoint empty for AWS S3. For S3-compatible stores (MinIO/Ceph),
+      # set endpoint + s3forcepathstyle: true.
+      s3forcepathstyle: false
+      # Keys come from the loki-s3-credentials secret via extraEnvFrom (below);
+      # the AWS SDK picks up AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY from env.
+
+  # Global limits — tune to your volume.
+  limits_config:
+    retention_period: 720h        # 30 days
+    ingestion_rate_mb: 8
+    ingestion_burst_size_mb: 16
+    max_query_series: 10000
+    reject_old_samples: true
+    reject_old_samples_max_age: 168h
+
+  compactor:
+    retention_enabled: true
+    delete_request_store: s3
+
+  # Single-tenant mode. Set to false + configure gateway auth for multi-tenant.
+  auth_enabled: false
+
+# ---- Service account ----
+serviceAccount:
+  create: true
+  name: loki
+
+# ---- Component sizing (adjust replicas to your cluster) ----
+# extraEnvFrom loads the static S3 keys from the loki-s3-credentials secret
+# into each component that talks to S3.
+write:
+  replicas: 2
+  extraEnvFrom:
+    - secretRef: { name: loki-s3-credentials }
+read:
+  replicas: 2
+  extraEnvFrom:
+    - secretRef: { name: loki-s3-credentials }
+backend:
+  replicas: 2
+  extraEnvFrom:
+    - secretRef: { name: loki-s3-credentials }
+
+# nginx gateway = single ingest/query endpoint (loki-gateway.loki.svc)
+gateway:
+  enabled: true
+  replicas: 2
+
+# Disable the bundled MinIO — we use real S3.
+minio:
+  enabled: false
+
+# Not needed in SimpleScalable mode.
+singleBinary:
+  replicas: 0
+chunksCache:
+  enabled: true
+resultsCache:
+  enabled: true

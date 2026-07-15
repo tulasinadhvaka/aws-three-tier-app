@@ -1,0 +1,41 @@
+# Promtail config — runs on a STANDALONE Docker host (not Kubernetes).
+# Uses Docker service discovery to find this host's containers, tails their
+# JSON log files, and pushes to the externally-exposed Loki gateway.
+#
+# Run (see README Step 5):
+#   docker run -d --name promtail --restart unless-stopped \
+#     -v /var/lib/docker/containers:/var/lib/docker/containers:ro \
+#     -v /var/run/docker.sock:/var/run/docker.sock:ro \
+#     -v "$PWD/promtail-config.yaml:/etc/promtail/config.yaml:ro" \
+#     grafana/promtail:latest -config.file=/etc/promtail/config.yaml
+
+server:
+  http_listen_port: 9080
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  # EDIT: external gateway address (see README Step 4).
+  - url: https://LOKI_GATEWAY/loki/api/v1/push
+    # For multi-tenant Loki: tenant_id: my-tenant
+    # If the gateway needs auth:
+    # basic_auth: { username: <user>, password: <pass> }
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+    relabel_configs:
+      # Stable identifier for this machine.
+      - target_label: host
+        replacement: docker-host-a          # EDIT: unique name per host
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/(.*)"
+        target_label: container
+      - source_labels: ["__meta_docker_container_image"]
+        target_label: image
+    pipeline_stages:
+      # Docker writes JSON log lines; extract the message and timestamp.
+      - docker: {}

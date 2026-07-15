@@ -1,0 +1,51 @@
+// Grafana Alloy config — runs on a STANDALONE Docker host (not Kubernetes).
+// Discovers this host's containers via the Docker socket, tails their logs,
+// and pushes to the externally-exposed Loki gateway.
+//
+// Run (see README Step 5):
+//   docker run -d --name alloy --restart unless-stopped \
+//     -v /var/lib/docker/containers:/var/lib/docker/containers:ro \
+//     -v /var/run/docker.sock:/var/run/docker.sock:ro \
+//     -v "$PWD/alloy-config.river:/etc/alloy/config.river:ro" \
+//     grafana/alloy:latest run /etc/alloy/config.river
+
+// 1. Discover all containers on this Docker host.
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// 2. Build a clean, low-cardinality label set from container metadata.
+//    Set `host` to a stable identifier for this machine.
+discovery.relabel "docker" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    target_label = "host"
+    replacement  = "docker-host-a"   // EDIT: unique name per host
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_image"]
+    target_label  = "image"
+  }
+}
+
+// 3. Tail the container log files via the Docker API.
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker.output
+  forward_to = [loki.write.default.receiver]
+}
+
+// 4. Push to the external Loki gateway.
+loki.write "default" {
+  endpoint {
+    url = "https://LOKI_GATEWAY/loki/api/v1/push"   // EDIT: external gateway address
+    // For multi-tenant Loki: tenant_id = "my-tenant"
+    // basic_auth { username = "..." password = "..." }   // if the gateway needs auth
+  }
+}
